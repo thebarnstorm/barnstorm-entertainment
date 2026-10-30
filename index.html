@@ -1297,6 +1297,27 @@
 
   .form-submit:hover { background: var(--gold-light); }
 
+  .form-submit:disabled { opacity: 0.7; cursor: default; }
+
+  .form-status {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 14px 0 0;
+    min-height: 1.5em;
+  }
+  .form-status.is-error { color: #ff8a8a; }
+  .form-status.is-success { color: var(--gold-light); }
+
+  /* Spam trap field, kept off-screen */
+  .hp-field {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
   /* ---- FOOTER ---- */
   footer {
     background: var(--near-black);
@@ -1778,35 +1799,35 @@
         </div>
       </div>
     </div>
-    <div class="inquiry-form reveal reveal-delay-2">
+    <form class="inquiry-form reveal reveal-delay-2" id="inquiry-form" action="#" method="post">
       <div class="form-row">
         <div class="form-field">
-          <label>First Name</label>
-          <input type="text" placeholder="Jane">
+          <label for="first_name">First Name *</label>
+          <input type="text" id="first_name" name="first_name" placeholder="Jane" autocomplete="given-name" required>
         </div>
         <div class="form-field">
-          <label>Last Name</label>
-          <input type="text" placeholder="Smith">
+          <label for="last_name">Last Name *</label>
+          <input type="text" id="last_name" name="last_name" placeholder="Smith" autocomplete="family-name" required>
         </div>
       </div>
       <div class="form-row">
         <div class="form-field">
-          <label>Email</label>
-          <input type="email" placeholder="jane@email.com">
+          <label for="email">Email *</label>
+          <input type="email" id="email" name="email" placeholder="jane@email.com" autocomplete="email" required>
         </div>
         <div class="form-field">
-          <label>Phone</label>
-          <input type="tel" placeholder="(212) 000-0000">
+          <label for="phone">Phone *</label>
+          <input type="tel" id="phone" name="phone" placeholder="(212) 000-0000" autocomplete="tel" required>
         </div>
       </div>
       <div class="form-row">
         <div class="form-field">
-          <label>Event Date</label>
-          <input type="date">
+          <label for="event_date">Event Date</label>
+          <input type="date" id="event_date" name="event_date">
         </div>
         <div class="form-field">
-          <label>Event Type</label>
-          <select>
+          <label for="event_type">Event Type</label>
+          <select id="event_type" name="event_type">
             <option value="">Select event type</option>
             <option>Wedding</option>
             <option>Corporate Event / Gala</option>
@@ -1818,20 +1839,37 @@
       </div>
       <div class="form-row">
         <div class="form-field">
-          <label>Venue</label>
-          <input type="text" placeholder="The Pierre">
+          <label for="venue">Venue</label>
+          <input type="text" id="venue" name="venue" placeholder="The Pierre">
         </div>
         <div class="form-field">
-          <label>City, State</label>
-          <input type="text" placeholder="New York, NY">
+          <label for="city_state">City, State</label>
+          <input type="text" id="city_state" name="city_state" placeholder="New York, NY">
         </div>
       </div>
       <div class="form-field">
-        <label>Tell us about your vision</label>
-        <textarea placeholder="Share any details, inspiration, or questions — the more we know, the better we can help."></textarea>
+        <label for="vision">Tell us about your vision</label>
+        <textarea id="vision" name="vision" placeholder="Share any details, inspiration, or questions - the more we know, the better we can help."></textarea>
       </div>
-      <button class="form-submit">Send My Inquiry →</button>
-    </div>
+
+      <!-- Spam trap: real people never see or fill this -->
+      <div class="hp-field" aria-hidden="true">
+        <label for="company_website">Leave this field empty</label>
+        <input type="text" id="company_website" name="company_website" tabindex="-1" autocomplete="off">
+      </div>
+
+      <!-- Hidden tracking fields, filled in by the script below -->
+      <input type="hidden" name="utm_source">
+      <input type="hidden" name="utm_medium">
+      <input type="hidden" name="utm_campaign">
+      <input type="hidden" name="utm_term">
+      <input type="hidden" name="utm_content">
+      <input type="hidden" name="page_url">
+      <input type="hidden" name="referrer">
+
+      <button type="submit" class="form-submit">Send My Inquiry →</button>
+      <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
+    </form>
   </div>
 </section>
 
@@ -1938,6 +1976,62 @@
   setTimeout(checkReveals, 300);
   setTimeout(checkReveals, 800);
 
-  document.querySelector('.form-submit').addEventListener('click', function() {
-    this.textContent = 'Inquiry Sent — We\'ll Be in Touch ✓';
-    this.s
+  // ---------- Inquiry form: sends each submission to Zapier, which creates an Insightly Lead ----------
+  // Paste the Zapier "Catch Hook" URL between the quotes below.
+  const FORM_WEBHOOK_URL = '';
+
+  const inquiryForm = document.getElementById('inquiry-form');
+  const formStatus = document.getElementById('form-status');
+  const submitBtn = inquiryForm.querySelector('.form-submit');
+  const submitLabel = submitBtn.textContent;
+
+  // Fill hidden tracking fields (ad campaign tags, page, referrer)
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(function (key) {
+      inquiryForm.elements[key].value = params.get(key) || '';
+    });
+    inquiryForm.elements['page_url'].value = window.location.href;
+    inquiryForm.elements['referrer'].value = document.referrer || '';
+  })();
+
+  function setStatus(message, type) {
+    formStatus.textContent = message;
+    formStatus.className = 'form-status' + (type ? ' is-' + type : '');
+  }
+
+  inquiryForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+
+    // Spam trap: if the hidden field has text, a bot filled it. Quietly stop.
+    if (inquiryForm.elements['company_website'].value) return;
+
+    if (!inquiryForm.reportValidity()) return;
+
+    if (!FORM_WEBHOOK_URL) {
+      setStatus('This form is not connected yet, so nothing was sent.', 'error');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending...';
+    setStatus('', '');
+
+    const data = new URLSearchParams(new FormData(inquiryForm));
+    data.delete('company_website');
+
+    fetch(FORM_WEBHOOK_URL, { method: 'POST', mode: 'no-cors', body: data })
+      .then(function () {
+        submitBtn.textContent = 'Inquiry Sent ✓';
+        setStatus('Thank you! We got your inquiry and will be in touch shortly.', 'success');
+        inquiryForm.reset();
+      })
+      .catch(function () {
+        submitBtn.disabled = false;
+        submitBtn.textContent = submitLabel;
+        setStatus('Something went wrong. Please try again or email us directly.', 'error');
+      });
+  });
+</script>
+</body>
+</html>
